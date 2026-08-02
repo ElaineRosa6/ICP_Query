@@ -104,17 +104,16 @@ async fn post_via_hyper_bound(
 
     // 接受无效证书（对齐 Python ssl=False）
     // 显式传入 CryptoProvider，避免依赖进程级默认 provider（未安装时 ClientConfig::builder() 会 panic）
-    let tls_config = {
-        let provider = Arc::new(rustls::crypto::ring::default_provider());
-        let mut cfg = rustls::ClientConfig::builder_with_provider(provider)
-            .with_safe_default_protocol_versions()
-            .map_err(|e| format!("TLS 协议版本初始化失败: {e}"))?
-            .dangerous()
-            .with_custom_certificate_verifier(Arc::new(NoCertVerifier))
-            .with_no_client_auth();
-        cfg.alpn_protocols = vec![b"http/1.1".to_vec()];
-        cfg
-    };
+    // 注意：不要手动设置 alpn_protocols —— hyper-rustls 要求 ALPN 由 .enable_http1()/.enable_http2()
+    // 自己管理，预先设置会在 HttpsConnectorBuilder::with_tls_config() 里直接 panic。
+    let tls_config = rustls::ClientConfig::builder_with_provider(Arc::new(
+        rustls::crypto::ring::default_provider(),
+    ))
+    .with_safe_default_protocol_versions()
+    .map_err(|e| format!("TLS 协议版本初始化失败: {e}"))?
+    .dangerous()
+    .with_custom_certificate_verifier(Arc::new(NoCertVerifier))
+    .with_no_client_auth();
 
     let https = hyper_rustls::HttpsConnectorBuilder::new()
         .with_tls_config(tls_config)

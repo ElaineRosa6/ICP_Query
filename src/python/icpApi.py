@@ -31,7 +31,7 @@ from routes import setup_routes
 from auth import auth_enabled
 
 
-VERSION="0.7.2"
+VERSION="0.7.3"
 
 
 def print_banner():

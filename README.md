@@ -45,9 +45,9 @@
 docker run -d -p 16181:16181 --name ymicp yiminger/ymicp
 ```
 
-### 2. 本地部署（可执行文件）
+### 2. 本地部署（可执行文件，Rust）
 
-- [📥 Release下载可执行文件](https://github.com/HG-ha/ICP_Query/releases)
+- [📥 Release下载可执行文件](https://github.com/HG-ha/ICP_Query/releases)（仅提供 Rust 版 `icpApi-rs` 的 Linux/Windows 二进制）
 
 ### 3. 源码部署（Python）
 
@@ -68,7 +68,7 @@ cd src/rust
 cargo run --release
 ```
 
-Release 产物：Python 为 `ymicp-*-amd64.{tar.gz,zip}`；Rust 为 `ymicp-*-amd64-rs.{tar.gz,zip}`（可执行文件 `icpApi-rs` / `icpApi-rs.exe`）。
+Release 产物：仅 Rust 版 `ymicp-*-amd64-rs.{tar.gz,zip}`（可执行文件 `icpApi-rs` / `icpApi-rs.exe`）。Python 版不再提供预编译二进制，请使用 Docker 镜像或源码部署。
 
 ## 🔐 账号登录（公网部署）
 
@@ -97,12 +97,11 @@ auth:
 **stdio（Claude Desktop / Cursor 推荐）：**
 
 ```shell
-# Python 编译产物 / 源码入口（二选一）
-./icpApi --mcp
+# Python（源码部署）
 python src/python/icpApi.py --mcp
 # 也可：python src/python/mcp_server.py
 
-# Rust
+# Rust（Release 二进制或源码）
 ./icpApi-rs --mcp
 # 或：cargo run --release -- --mcp
 ```
@@ -113,8 +112,8 @@ Claude Desktop 示例（`claude_desktop_config.json`）：
 {
   "mcpServers": {
     "icp-query": {
-      "command": "H:/path/to/icpApi",
-      "args": ["--mcp"]
+      "command": "python",
+      "args": ["H:/path/to/ICP_Query/src/python/icpApi.py", "--mcp"]
     },
     "icp-query-rs": {
       "command": "H:/path/to/icpApi-rs",
@@ -135,9 +134,8 @@ mcp:
 主服务启动时会在独立端口监听 `/mcp`。也可单独启动：
 
 ```shell
-./icpApi --mcp-http
 ./icpApi-rs --mcp-http
-# 源码：python src/python/icpApi.py --mcp-http
+# Python 源码：python src/python/icpApi.py --mcp-http
 ```
 
 → `http://127.0.0.1:16182/mcp`

@@ -41,118 +41,6 @@ jobs:
             yiminger/ymicp:${{ steps.extract_version.outputs.VERSION }}
             yiminger/ymicp:latest
 
-  # ---------- Python (Nuitka) ----------
-  build-linux:
-    name: Build Linux (Python)
-    runs-on: ubuntu-22.04
-    timeout-minutes: 120
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up Python 3.11
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y patchelf ccache
-
-      - name: Install Python dependencies
-        run: |
-          pip install -r src/python/requirements.txt
-          pip install nuitka ordered-set zstandard
-
-      - name: Prepare build tree
-        run: |
-          mkdir -p build/python
-          cp -r src/python/* build/python/
-          cp -r templates static config.yml build/python/
-
-      - name: Build with Nuitka
-        working-directory: build/python
-        run: |
-          yes | python -m nuitka --standalone --onefile \
-            --include-module=mcp_server \
-            --include-package=mcp \
-            --include-data-files="templates/*=templates/" \
-            --include-data-files="static/js/*=static/js/" \
-            --include-data-files="static/css/*=static/css/" \
-            --include-data-files="static/fonts/*=static/fonts/" \
-            --include-data-files="config.yml=config.yml" \
-            icpApi.py
-
-      - name: Package
-        run: |
-          mkdir -p release
-          cp build/python/icpApi.bin release/icpApi
-          chmod +x release/icpApi
-          cd release && tar -czf ../ymicp-linux-amd64.tar.gz icpApi
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: ymicp-linux-amd64
-          path: ymicp-linux-amd64.tar.gz
-
-  build-windows:
-    name: Build Windows (Python)
-    runs-on: windows-latest
-    timeout-minutes: 120
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up Python 3.11
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Install Python dependencies
-        run: |
-          pip install -r src/python/requirements.txt
-          pip install nuitka ordered-set zstandard
-
-      - name: Prepare build tree
-        shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Force -Path build\python
-          Copy-Item -Recurse src\python\* build\python\
-          Copy-Item -Recurse templates build\python\
-          Copy-Item -Recurse static build\python\
-          Copy-Item config.yml build\python\
-
-      - name: Download Dependency Walker
-        shell: pwsh
-        run: |
-          $cacheDir = "$env:LOCALAPPDATA\Nuitka\Nuitka\Cache\downloads\depends\x86_64"
-          New-Item -ItemType Directory -Force -Path $cacheDir
-          Invoke-WebRequest -Uri "https://dependencywalker.com/depends22_x64.zip" -OutFile "$cacheDir\depends22_x64.zip"
-          Expand-Archive -Path "$cacheDir\depends22_x64.zip" -DestinationPath $cacheDir -Force
-
-      - name: Build with Nuitka
-        working-directory: build/python
-        shell: cmd
-        run: |
-          echo Yes | python -m nuitka --standalone --onefile --include-module=mcp_server --include-package=mcp --include-data-files="templates/*=templates/" --include-data-files="static/js/*=static/js/" --include-data-files="static/css/*=static/css/" --include-data-files="static/fonts/*=static/fonts/" --include-data-files="config.yml=config.yml" icpApi.py
-
-      - name: Package
-        shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Force -Path release
-          Copy-Item build\python\icpApi.exe -Destination release\
-          Compress-Archive -Path release\icpApi.exe -DestinationPath ymicp-windows-amd64.zip
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: ymicp-windows-amd64
-          path: ymicp-windows-amd64.zip
-
   # ---------- Rust ----------
   build-linux-rs:
     name: Build Linux (Rust)
@@ -248,7 +136,7 @@ jobs:
 
   release:
     name: Create GitHub Release
-    needs: [build-docker, build-linux, build-windows, build-linux-rs, build-windows-rs]
+    needs: [build-docker, build-linux-rs, build-windows-rs]
     runs-on: ubuntu-latest
     permissions:
       contents: write

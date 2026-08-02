@@ -103,8 +103,12 @@ async fn post_via_hyper_bound(
     http.set_connect_timeout(Some(timeout));
 
     // 接受无效证书（对齐 Python ssl=False）
+    // 显式传入 CryptoProvider，避免依赖进程级默认 provider（未安装时 ClientConfig::builder() 会 panic）
     let tls_config = {
-        let mut cfg = rustls::ClientConfig::builder()
+        let provider = Arc::new(rustls::crypto::ring::default_provider());
+        let mut cfg = rustls::ClientConfig::builder_with_provider(provider)
+            .with_safe_default_protocol_versions()
+            .map_err(|e| format!("TLS 协议版本初始化失败: {e}"))?
             .dangerous()
             .with_custom_certificate_verifier(Arc::new(NoCertVerifier))
             .with_no_client_auth();

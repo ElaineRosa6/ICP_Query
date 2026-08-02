@@ -34,7 +34,7 @@ use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 use tracing_appender::non_blocking::WorkerGuard;
 
-const VERSION: &str = "0.7.1";
+const VERSION: &str = "0.7.2";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum RunMode {
@@ -211,6 +211,10 @@ async fn build_state(
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    // 安装进程级默认 rustls CryptoProvider，避免部分 TLS 代码路径（如 IPv6 本地绑定）
+    // 因缺少默认 provider 而 panic（rustls 0.23 要求显式安装或指定 provider）。
+    let _ = rustls::crypto::ring::default_provider().install_default();
+
     let mode = parse_mode();
     if mode != RunMode::McpStdio {
         print_banner();

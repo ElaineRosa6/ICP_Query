@@ -1300,6 +1300,9 @@
         let currentTask = null;
         let currentQueryData = null;
         let logRefreshInterval = null;
+        // 最近一次从后端加载的完整配置，保存时用作没有对应输入控件的字段的基底，
+        // 避免把这些字段静默覆盖为写死的默认值导致配置丢失
+        let loadedConfigCache = null;
 
         // 切换侧边栏显示/隐藏（移动端）
         function toggleSidebar() {
@@ -2973,6 +2976,7 @@
 
                 if (configResult.code === 200) {
                     const cfg = configResult.data;
+                    loadedConfigCache = cfg;
 
                     // 系统配置
                     document.getElementById('cfg-host').value = cfg.system.host;
@@ -3123,12 +3127,13 @@
                     },
                     captcha: {
                         enable: document.getElementById('cfg-captcha-enable').checked,
-                        save_failed_img: false,
-                        save_failed_img_path: "faile_captcha",
-                        device: ["CPU"],
+                        // 以下字段暂无对应的界面控件，从最近加载的配置中回填，避免保存时被静默重置
+                        save_failed_img: loadedConfigCache?.captcha?.save_failed_img ?? false,
+                        save_failed_img_path: loadedConfigCache?.captcha?.save_failed_img_path ?? "faile_captcha",
+                        device: loadedConfigCache?.captcha?.device ?? ["CPU"],
                         retry_times: parseInt(document.getElementById('cfg-retry-times').value),
                         coding_code: document.getElementById('cfg-coding-code').value,
-                        coding_show: false
+                        coding_show: loadedConfigCache?.captcha?.coding_show ?? false
                     },
                     proxy: {
                         local_ipv6_pool: {
@@ -3143,8 +3148,9 @@
                         extra_api: {
                             url: document.getElementById('cfg-extra-api-url').value || null,
                             extra_interval: parseInt(document.getElementById('cfg-extra-interval').value),
-                            timeout: 100,
-                            timeout_drop: 8,
+                            // 暂无界面控件，回填当前配置值
+                            timeout: loadedConfigCache?.proxy?.extra_api?.timeout ?? 100,
+                            timeout_drop: loadedConfigCache?.proxy?.extra_api?.timeout_drop ?? 8,
                             check_proxy: document.getElementById('cfg-check-proxy').checked,
                             proxy_timeout: parseFloat(document.getElementById('cfg-proxy-timeout').value) || 0.5,
                             check_proxy_num: parseInt(document.getElementById('cfg-check-proxy-num').value) || 20,
@@ -3157,8 +3163,9 @@
                         prohibit_suffix: prohibitSuffix
                     },
                     log: {
-                        dir: "logs",
-                        file_head: "ymicp",
+                        // 暂无界面控件，回填当前配置值，避免覆盖用户自定义的日志目录/文件名
+                        dir: loadedConfigCache?.log?.dir ?? "logs",
+                        file_head: loadedConfigCache?.log?.file_head ?? "ymicp",
                         backup_count: parseInt(document.getElementById('cfg-backup-count').value),
                         save_log: document.getElementById('cfg-save-log').checked,
                         output_console: document.getElementById('cfg-output-console').checked

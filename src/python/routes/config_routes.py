@@ -50,16 +50,27 @@ def _mcp_config_public():
 
 
 def _merge_auth_users(users_in):
-    """前端空密码表示保持原密码"""
-    old_map = {}
+    """前端空密码表示保持原密码。
+    users_in 为 None（未提交该字段，如旧版前端缓存）或提交结果为空，
+    都保留原有完整用户列表，避免把已配置的用户/密码静默清空、
+    或被重置成公开的默认账号密码（admin/admin123），造成安全隐患。"""
+    old_users = []
     a = getattr(config, "auth", None)
+    old_map = {}
     for u in (getattr(a, "users", None) or []):
         if isinstance(u, dict):
-            old_map[u.get("username")] = u.get("password")
+            uname, pwd = u.get("username"), u.get("password")
         else:
-            old_map[getattr(u, "username", None)] = getattr(u, "password", None)
+            uname, pwd = getattr(u, "username", None), getattr(u, "password", None)
+        if uname:
+            old_map[uname] = pwd
+            old_users.append({"username": uname, "password": pwd or ""})
+
+    if users_in is None:
+        return old_users or [{"username": "admin", "password": "admin123"}]
+
     result = []
-    for u in users_in or []:
+    for u in users_in:
         if not isinstance(u, dict):
             continue
         uname = (u.get("username") or "").strip()
@@ -70,7 +81,7 @@ def _merge_auth_users(users_in):
             pwd = old_map.get(uname) or ""
         result.append({"username": uname, "password": pwd})
     if not result:
-        result = [{"username": "admin", "password": old_map.get("admin") or "admin123"}]
+        return old_users or [{"username": "admin", "password": "admin123"}]
     return result
 
 
@@ -138,6 +149,18 @@ async def get_config(request):
         return wj({"code": 500, "message": f"读取配置失败: {str(e)}"})
 
 
+def _cur(*path, default=None):
+    """读取当前内存配置中的值，作为保存时的兜底，而不是写死的默认值。
+    这样客户端漏传的字段（新增字段、界面未覆盖的字段、旧版前端缓存等）
+    会保留原配置文件中的值，不会被静默重置。"""
+    node = config
+    for key in path:
+        node = getattr(node, key, None)
+        if node is None:
+            return default
+    return node
+
+
 @jsondump
 @routes.view(r"/config/save")
 async def save_config(request):
@@ -146,67 +169,81 @@ async def save_config(request):
         try:
             import yaml
             data = await request.json()
-            
-            # 构建配置字典
+
+            def g(*path, default=None):
+                """按路径取本次提交的值；未提交（None）则取当前配置值兜底，
+                最后才落到硬编码默认值。注意 False/0/[] 等合法值不会被当成"未提交"。"""
+                node = data
+                for key in path:
+                    if isinstance(node, dict) and key in node:
+                        node = node[key]
+                    else:
+                        return _cur(*path, default=default)
+                return node if node is not None else _cur(*path, default=default)
+
+            # 构建配置字典：以当前配置为兜底，避免漏传字段被重置
             config_dict = {
                 "system": {
-                    "host": data.get("system", {}).get("host", "0.0.0.0"),
-                    "port": int(data.get("system", {}).get("port", 16181)),
-                    "http_client_timeout": int(data.get("system", {}).get("http_client_timeout", 5)),
-                    "web_ui": bool(data.get("system", {}).get("web_ui", True)),
-                    "detail_concurrency": int(data.get("system", {}).get("detail_concurrency", 5))
+                    "host": g("system", "host", default="0.0.0.0"),
+                    "port": int(g("system", "port", default=16181)),
+                    "http_client_timeout": int(g("system", "http_client_timeout", default=5)),
+                    "web_ui": bool(g("system", "web_ui", default=True)),
+                    "detail_concurrency": int(g("system", "detail_concurrency", default=5))
                 },
                 "captcha": {
-                    "enable": bool(data.get("captcha", {}).get("enable", True)),
-                    "save_failed_img": bool(data.get("captcha", {}).get("save_failed_img", False)),
-                    "save_failed_img_path": data.get("captcha", {}).get("save_failed_img_path", "faile_captcha"),
-                    "retry_times": int(data.get("captcha", {}).get("retry_times", 2))
+                    "enable": bool(g("captcha", "enable", default=True)),
+                    "save_failed_img": bool(g("captcha", "save_failed_img", default=False)),
+                    "save_failed_img_path": g("captcha", "save_failed_img_path", default="faile_captcha"),
+                    "retry_times": int(g("captcha", "retry_times", default=2))
                 },
                 "proxy": {
                     "local_ipv6_pool": {
-                        "enable": bool(data.get("proxy", {}).get("local_ipv6_pool", {}).get("enable", False)),
-                        "pool_num": int(data.get("proxy", {}).get("local_ipv6_pool", {}).get("pool_num", 88)),
-                        "check_interval": int(data.get("proxy", {}).get("local_ipv6_pool", {}).get("check_interval", 1)),
-                        "ipv6_network_card": data.get("proxy", {}).get("local_ipv6_pool", {}).get("ipv6_network_card", "eth0")
+                        "enable": bool(g("proxy", "local_ipv6_pool", "enable", default=False)),
+                        "pool_num": int(g("proxy", "local_ipv6_pool", "pool_num", default=88)),
+                        "check_interval": int(g("proxy", "local_ipv6_pool", "check_interval", default=1)),
+                        "ipv6_network_card": g("proxy", "local_ipv6_pool", "ipv6_network_card", default="eth0")
                     },
                     "tunnel": {
+                        # 注意：url 为 null/空字符串代表用户主动清空该字段，不能套用"未提交则保留原值"的兜底逻辑，
+                        # 因此这里仍直接从提交数据中取值（缺失整个 proxy/tunnel 字段时也视为清空）
                         "url": data.get("proxy", {}).get("tunnel", {}).get("url") or None
                     },
                     "extra_api": {
                         "url": data.get("proxy", {}).get("extra_api", {}).get("url") or None,
-                        "extra_interval": int(data.get("proxy", {}).get("extra_api", {}).get("extra_interval", 3)),
-                        "timeout": int(data.get("proxy", {}).get("extra_api", {}).get("timeout", 100)),
-                        "timeout_drop": int(data.get("proxy", {}).get("extra_api", {}).get("timeout_drop", 8)),
-                        "check_proxy": bool(data.get("proxy", {}).get("extra_api", {}).get("check_proxy", True)),
-                        "proxy_timeout": float(data.get("proxy", {}).get("extra_api", {}).get("proxy_timeout", 0.5)),
-                        "check_proxy_num": int(data.get("proxy", {}).get("extra_api", {}).get("check_proxy_num", 20)),
-                        "auto_maintenace": bool(data.get("proxy", {}).get("extra_api", {}).get("auto_maintenace", True)),
-                        "pool_num": int(data.get("proxy", {}).get("extra_api", {}).get("pool_num", 100))
+                        "extra_interval": int(g("proxy", "extra_api", "extra_interval", default=3)),
+                        "timeout": int(g("proxy", "extra_api", "timeout", default=100)),
+                        "timeout_drop": int(g("proxy", "extra_api", "timeout_drop", default=8)),
+                        "check_proxy": bool(g("proxy", "extra_api", "check_proxy", default=True)),
+                        "proxy_timeout": float(g("proxy", "extra_api", "proxy_timeout", default=0.5)),
+                        "check_proxy_num": int(g("proxy", "extra_api", "check_proxy_num", default=20)),
+                        "auto_maintenace": bool(g("proxy", "extra_api", "auto_maintenace", default=True)),
+                        "pool_num": int(g("proxy", "extra_api", "pool_num", default=100))
                     }
                 },
                 "risk_avoidance": {
-                    "allow_type": data.get("risk_avoidance", {}).get("allow_type", ["web", "app", "mapp", "kapp", "bweb", "bapp", "bmapp", "bkapp"]),
-                    "prohibit_suffix": data.get("risk_avoidance", {}).get("prohibit_suffix", [])
+                    "allow_type": g("risk_avoidance", "allow_type",
+                                     default=["web", "app", "mapp", "kapp", "bweb", "bapp", "bmapp", "bkapp"]),
+                    "prohibit_suffix": g("risk_avoidance", "prohibit_suffix", default=[])
                 },
                 "log": {
-                    "dir": data.get("log", {}).get("dir", "logs"),
-                    "file_head": data.get("log", {}).get("file_head", "ymicp"),
-                    "backup_count": int(data.get("log", {}).get("backup_count", 7)),
-                    "save_log": bool(data.get("log", {}).get("save_log", False)),
-                    "output_console": bool(data.get("log", {}).get("output_console", True))
+                    "dir": g("log", "dir", default="logs"),
+                    "file_head": g("log", "file_head", default="ymicp"),
+                    "backup_count": int(g("log", "backup_count", default=7)),
+                    "save_log": bool(g("log", "save_log", default=False)),
+                    "output_console": bool(g("log", "output_console", default=True))
                 },
                 "history": {
-                    "save_query_history": bool(data.get("history", {}).get("save_query_history", True))
+                    "save_query_history": bool(g("history", "save_query_history", default=True))
                 },
                 "auth": {
-                    "enable": bool(data.get("auth", {}).get("enable", False)),
-                    "secret": data.get("auth", {}).get("secret") or "change-me",
-                    "session_hours": int(data.get("auth", {}).get("session_hours", 72)),
+                    "enable": bool(g("auth", "enable", default=False)),
+                    "secret": data.get("auth", {}).get("secret") or _cur("auth", "secret", default="change-me"),
+                    "session_hours": int(g("auth", "session_hours", default=72)),
                     "users": _merge_auth_users(data.get("auth", {}).get("users")),
                 },
                 "mcp": {
-                    "enable": bool(data.get("mcp", {}).get("enable", False)),
-                    "port": int(data.get("mcp", {}).get("port", 16182)),
+                    "enable": bool(g("mcp", "enable", default=False)),
+                    "port": int(g("mcp", "port", default=16182)),
                 },
             }
 

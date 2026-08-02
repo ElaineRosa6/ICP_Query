@@ -112,19 +112,27 @@ async fn save_config(
     }
 }
 
+/// 将 `overlay` 递归合并到 `base` 上：仅覆盖 overlay 中实际出现的字段，
+/// 其余字段保留 base（即当前配置）原值，避免客户端漏传字段时被重置为硬编码默认值。
+fn merge_json(base: &mut Value, overlay: &Value) {
+    match (base, overlay) {
+        (Value::Object(base_map), Value::Object(overlay_map)) => {
+            for (k, v) in overlay_map {
+                merge_json(base_map.entry(k.clone()).or_insert(Value::Null), v);
+            }
+        }
+        (base_slot, overlay_val) => {
+            *base_slot = overlay_val.clone();
+        }
+    }
+}
+
 fn build_config_from_json(data: &Value, old: &AppConfig) -> Result<AppConfig, String> {
-    let wrapped = json!({
-        "system": data.get("system").cloned().unwrap_or(json!({})),
-        "captcha": data.get("captcha").cloned().unwrap_or(json!({})),
-        "proxy": data.get("proxy").cloned().unwrap_or(json!({})),
-        "risk_avoidance": data.get("risk_avoidance").cloned().unwrap_or(json!({})),
-        "log": data.get("log").cloned().unwrap_or(json!({})),
-        "history": data.get("history").cloned().unwrap_or(json!({})),
-        "auth": data.get("auth").cloned().unwrap_or(json!({})),
-        "mcp": data.get("mcp").cloned().unwrap_or(json!({})),
-    });
-    let yaml = serde_yaml::to_string(&wrapped).map_err(|e| e.to_string())?;
-    let mut cfg: AppConfig = serde_yaml::from_str(&yaml).map_err(|e| e.to_string())?;
+    // 以当前配置为基底做深合并，而不是每个字段都用硬编码默认值兜底，
+    // 这样客户端未提交的字段（新增字段/表单未覆盖的字段）会保留原值，不会被静默覆盖丢失。
+    let mut base = serde_json::to_value(old).map_err(|e| e.to_string())?;
+    merge_json(&mut base, data);
+    let mut cfg: AppConfig = serde_json::from_value(base).map_err(|e| e.to_string())?;
 
     if let Some(Value::String(u)) = data.pointer("/proxy/tunnel/url") {
         cfg.proxy.tunnel.url = if u.is_empty() {
@@ -169,6 +177,10 @@ fn build_config_from_json(data: &Value, old: &AppConfig) -> Result<AppConfig, St
     }
     if !merged.is_empty() {
         cfg.auth.users = merged;
+    } else if data.pointer("/auth/users").is_some() {
+        // 客户端显式提交了空用户列表：保留原有完整用户列表，
+        // 避免账号被静默清空或回退到公开的默认密码（安全隐患）
+        cfg.auth.users = old.auth.users.clone();
     }
     cfg.normalize();
     Ok(cfg)

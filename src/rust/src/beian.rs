@@ -366,7 +366,7 @@ impl Beian {
 
     async fn get_app_detail(
         &self,
-        data_id: &str,
+        data_id: &Value,
         service_type: i64,
         p_uuid: &str,
         token: &str,
@@ -375,7 +375,7 @@ impl Beian {
         proxy: Option<&str>,
         captcha_enable: bool,
     ) -> Result<Value, String> {
-        let info = json!({"dataId": data_id, "serviceType": service_type});
+        let info = json!({"dataId": data_id.clone(), "serviceType": service_type});
         let mut detail_header = base_header.clone();
         detail_header.insert("uuid".into(), p_uuid.into());
         detail_header.insert("token".into(), token.into());
@@ -488,8 +488,11 @@ impl Beian {
                     let mut handles = Vec::new();
                     for item in chunk {
                         let item = item.clone();
-                        let data_id = item["dataId"].as_str().unwrap_or("").to_string();
-                        if data_id.is_empty() {
+                        // dataId 上游可能返回字符串或数字，保留原始类型透传给详情接口
+                        let data_id = item.get("dataId").cloned().unwrap_or(Value::Null);
+                        if data_id.is_null()
+                            || data_id.as_str().is_some_and(|s| s.is_empty())
+                        {
                             detailed.push(item);
                             continue;
                         }

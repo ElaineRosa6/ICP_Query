@@ -105,8 +105,11 @@ def run_stdio() -> None:
 
 
 def run_http(host: str = "0.0.0.0", port: int = 16182) -> None:
-    # FastMCP streamable-http；路径一般为 /mcp
-    mcp.run(transport="streamable-http", host=host, port=port)
+    # mcp>=1.27 的 FastMCP.run() 不再接收 host/port，必须写到 settings
+    mcp.settings.host = host
+    mcp.settings.port = port
+    mcp.settings.streamable_http_path = "/mcp"
+    mcp.run(transport="streamable-http")
 
 
 def main(argv: Optional[list] = None) -> None:

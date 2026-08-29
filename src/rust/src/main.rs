@@ -34,7 +34,7 @@ use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 use tracing_appender::non_blocking::WorkerGuard;
 
-const VERSION: &str = "0.7.5";
+const VERSION: &str = "0.7.6";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum RunMode {

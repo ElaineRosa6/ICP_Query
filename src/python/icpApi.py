@@ -10,11 +10,13 @@ from aiohttp import web
 import aiohttp_jinja2
 import jinja2
 
-# 设置标准输出编码为UTF-8，避免在不同环境下出现编码错误
-if sys.stdout.encoding != 'utf-8':
-    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
-if sys.stderr.encoding != 'utf-8':
-    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
+def _configure_stdio_encoding():
+    """Web/API 模式再改编码。MCP stdio 必须保持原始 stdout，否则协议流会被破坏。"""
+    if sys.stdout.encoding != 'utf-8':
+        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+    if sys.stderr.encoding != 'utf-8':
+        sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
+
 
 # 导入自定义模块
 from mlog import logger
@@ -31,7 +33,7 @@ from routes import setup_routes
 from auth import auth_enabled
 
 
-VERSION="0.7.5"
+VERSION="0.7.6"
 
 
 def print_banner():
@@ -175,6 +177,8 @@ def main(argv=None):
             # 日志走 stderr，避免污染 stdio 协议流
             run_stdio()
         return
+
+    _configure_stdio_encoding()
 
     # 打印横幅
     print_banner()

@@ -48,5 +48,5 @@ def load_config(file_path='config.yml'):
 try:
     config = load_config('config.yml')
 except Exception:
-    print("加载配置文件失败")
+    print("加载配置文件失败", file=sys.stderr)
     sys.exit(1)

@@ -1,4 +1,4 @@
-# ICP_Query Rust 版 (v0.7.5)
+# ICP_Query Rust 版 (v0.7.6)
 
 Python `ymicp` / `icpApi` 的 Rust 重写，功能对齐：
 

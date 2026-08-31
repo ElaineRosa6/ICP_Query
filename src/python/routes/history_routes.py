@@ -14,7 +14,7 @@ routes = web.RouteTableDef()
 @routes.view(r"/history")
 async def get_history(request):
     """获取历史记录列表"""
-    limit = int(request.query.get("limit", 50))
+    limit = min(int(request.query.get("limit", 50)), 500)
     offset = int(request.query.get("offset", 0))
     search_type = request.query.get("type")
     

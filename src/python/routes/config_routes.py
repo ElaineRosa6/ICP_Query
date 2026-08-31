@@ -261,7 +261,7 @@ async def save_config(request):
                 yaml.dump(config_dict, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
             
             logger.info("配置文件已更新，需要重启服务生效")
-            log_collector.add_log("配置文件已更新，需要重启服务生效")
+            await log_collector.add_log("配置文件已更新，需要重启服务生效")
             return wj({"code": 200, "message": "配置保存成功，重启服务后生效"})
         except Exception as e:
             logger.error(f"保存配置文件失败: {e}")
@@ -287,7 +287,7 @@ async def restart_service(request):
     if request.method == "POST":
         try:
             logger.warning("收到重启服务请求，将在3秒后重启...")
-            log_collector.add_log("收到重启服务请求，将在3秒后重启...")
+            await log_collector.add_log("收到重启服务请求，将在3秒后重启...")
             
             # 异步延迟重启，先返回响应
             async def delayed_restart():
@@ -323,7 +323,12 @@ async def restart_service(request):
                         await asyncio.sleep(1)
                         
                     else:  # Linux/Unix
-                        # Linux使用execv直接替换进程
+                        # Linux 先关闭应用资源，再用 execv 替换当前进程。
+                        try:
+                            await request.app.shutdown()
+                            logger.info("已优雅关闭 app，准备重启")
+                        except Exception as shutdown_err:
+                            logger.warning(f"关闭 app 时出错（继续重启）：{shutdown_err}")
                         os.execv(python, [python] + sys.argv)
                     
                     # Windows: 优雅停止事件循环

@@ -7,7 +7,7 @@ import asyncio
 import random
 import aiohttp
 from aiohttp import web
-from middlewares import jsondump, wj
+from middlewares import wj
 from load_config import config
 from mlog import logger
 from proxy_pool import pool_cache
@@ -17,12 +17,11 @@ from utils import is_valid_url
 routes = web.RouteTableDef()
 
 
-@jsondump
-@routes.view(r'/query/{path}')
+@routes.view(r'/query/{path:(?!multi$)[^/]+}')
 async def geturl(request):
     """单个查询路由"""
     path = request.match_info['path']
-    
+
     # 从app中获取查询处理器
     appth = request.app.get('appth', {})
     bappth = request.app.get('bappth', {})
@@ -32,13 +31,13 @@ async def geturl(request):
 
     if path not in config.risk_avoidance.allow_type:
         return wj({"code":102,"msg":"不是支持的查询类型"})
-    
+
     if request.method == "GET":
         appname = request.query.get("search")
         pageNum = request.query.get("pageNum")
         pageSize = request.query.get("pageSize")
         proxy = request.query.get("proxy")
-        
+
     if request.method == "POST":
         data = await request.json()
         appname = data.get("search")
@@ -46,11 +45,11 @@ async def geturl(request):
         pageSize = data.get("pageSize")
         proxy = data.get("proxy")
 
-    if not not any(appname.endswith(suffix) for suffix in config.risk_avoidance.prohibit_suffix):
-        return wj({"code": 405,"message":"不允许的查询内容"})
-
     if not appname:
         return wj({"code":101,"msg":"参数错误,请指定search参数"})
+
+    if any(appname.endswith(suffix) for suffix in config.risk_avoidance.prohibit_suffix):
+        return wj({"code": 405,"message":"不允许的查询内容"})
     
     if proxy is not None:
         logger.info(f"使用指定代理：{proxy}")
@@ -109,6 +108,77 @@ async def geturl(request):
             logger.warning("当前访问已被创宇盾拦截")
             return wj(data)
     return wj(data)
+
+
+@routes.view(r'/query/multi')
+async def multi_query(request):
+    """多类型同时查询"""
+    if request.method == "GET":
+        appname = request.query.get("search")
+        types_str = request.query.get("types", "web,mapp,kapp")
+        proxy = request.query.get("proxy")
+
+    if request.method == "POST":
+        try:
+            data = await request.json()
+        except Exception:
+            return wj({"code": 400, "msg": "无法解析请求体，请确保发送有效的 JSON"})
+        appname = data.get("search")
+        types_str = data.get("types", "web,mapp,kapp")
+        proxy = data.get("proxy")
+
+    if not appname:
+        return wj({"code": 101, "msg": "参数错误,请指定search参数"})
+
+    appth = request.app.get('appth', {})
+    bappth = request.app.get('bappth', {})
+
+    types = [t.strip() for t in types_str.split(",")]
+    valid_types = [t for t in types if t in appth or t in bappth]
+
+    if not valid_types:
+        return wj({"code": 102, "msg": "不是支持的查询类型"})
+
+    # 并发查询所有类型
+    async def query_one(t):
+        for i in range(config.captcha.retry_times):
+            p = None
+            if config.proxy.local_ipv6_pool.enable:
+                p = ""
+            elif config.proxy.tunnel.url and is_valid_url(config.proxy.tunnel.url):
+                p = config.proxy.tunnel.url
+            elif config.proxy.extra_api.url and is_valid_url(config.proxy.extra_api.url):
+                if config.proxy.extra_api.auto_maintenace:
+                    p = await request.app.proxypool.getproxy()
+                else:
+                    timeout = aiohttp.ClientTimeout(total=config.system.http_client_timeout)
+                    async with aiohttp.ClientSession(timeout=timeout) as session:
+                        async with session.get(config.proxy.extra_api.url) as req:
+                            res = await req.text()
+                            p = f"http://{random.choice(res.split()).strip()}"
+
+            if proxy:
+                p = f"http://{proxy}"
+
+            if t in appth:
+                result = await appth[t](appname, proxy=p)
+            else:
+                result = await bappth[t](appname, proxy=p)
+
+            if result.get("code") == 200:
+                return t, result
+            if result.get("message", "") == "当前访问已被创宇盾拦截":
+                return t, result
+        return t, result
+
+    tasks = [query_one(t) for t in valid_types]
+    results = await asyncio.gather(*tasks)
+
+    merged = {}
+    for t, result in results:
+        merged[t] = result.get("params", {}) if result.get("code") == 200 else {"error": result.get("message", "查询失败")}
+
+    return wj({"code": 200, "msg": "查询成功", "params": merged})
 
 
 def setup_query_routes(app):

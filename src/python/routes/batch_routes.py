@@ -14,7 +14,6 @@ from middlewares import jsondump, wj
 from load_config import config
 from mlog import logger
 from log_collector import log_collector
-from proxy_pool import pool_cache
 from utils import is_valid_url
 
 
@@ -127,9 +126,10 @@ async def create_task(taskname, data, request, searnum, apptype="web"):
                     # 处理响应
                     if data.get("code") == 500:
                         if "请求验证码时失败" in data.get("message", ''):
-                            if proxy and proxy[7:] in pool_cache:
-                                del pool_cache[proxy[7:]]
-                                logger.info(f"代理无效，已剔除代理：{proxy[7:]}")
+                            if proxy:
+                                proxy_host = proxy.replace("http://", "").replace("https://", "")
+                                await request.app.proxypool.remove_proxy(proxy_host)
+                                logger.info(f"代理无效，已剔除代理：{proxy_host}")
 
                         if data.get("message", "") == "当前访问已被创宇盾拦截":
                             logger.warning(f"当前访问已被创宇盾拦截，批量任务：{taskname}，使用代理：{proxy}")
@@ -292,7 +292,7 @@ async def create_task_catch(request):
             task_manager.add_task(taskname, async_task)
         
         logger.info(f"创建批量查询任务：{taskname}")
-        log_collector.add_log(f"创建批量查询任务：{taskname}，类型：{seartype}，数量：{len(domains)}")
+        await log_collector.add_log(f"创建批量查询任务：{taskname}，类型：{seartype}，数量：{len(domains)}")
         return wj({"code": 200,"message":"创建任务成功"})
 
 
@@ -318,7 +318,7 @@ async def del_task(request):
             del request.app["tasks"][taskname]
             
             logger.warning(f"删除批量查询任务：{taskname}")
-            log_collector.add_log(f"删除批量查询任务：{taskname}")
+            await log_collector.add_log(f"删除批量查询任务：{taskname}")
             return wj({"code": 200})
         else:
             return wj({"code":404,"message":"任务不存在，可能已经完成或删除"})

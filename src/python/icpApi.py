@@ -5,6 +5,7 @@ ICP备案查询系统 - 主入口文件
 """
 import sys
 import io
+import asyncio
 import logging
 from aiohttp import web
 import aiohttp_jinja2
@@ -163,6 +164,9 @@ def _parse_args(argv=None):
 def main(argv=None):
     """主函数：默认 Web/API；--mcp / --mcp-http 与 Rust 对齐"""
     args = _parse_args(argv)
+
+    if sys.platform == 'win32':
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
     if args.mcp or args.mcp_http:
         from mcp_server import run_http, run_stdio

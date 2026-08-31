@@ -4,7 +4,7 @@
 用于收集和管理系统运行时日志
 """
 from collections import deque
-import threading
+import asyncio
 from datetime import datetime
 import logging
 
@@ -13,26 +13,34 @@ class LogCollector:
     """实时日志收集器"""
     def __init__(self, maxlen=1000):
         self.logs = deque(maxlen=maxlen)
-        self.lock = threading.Lock()
-    
-    def add_log(self, message, level='INFO'):
+        self.lock = asyncio.Lock()
+
+    async def add_log(self, message, level='INFO'):
         """添加日志"""
-        with self.lock:
+        async with self.lock:
             self.logs.append({
                 'time': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
                 'message': message,
                 'level': level
             })
-    
-    def get_logs(self, limit=500):
+
+    def add_log_sync(self, message, level='INFO'):
+        """同步添加日志（供 logging.Handler 调用）"""
+        self.logs.append({
+            'time': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            'message': message,
+            'level': level
+        })
+
+    async def get_logs(self, limit=500):
         """获取日志列表"""
-        with self.lock:
+        async with self.lock:
             logs_list = list(self.logs)
             return logs_list[-limit:] if len(logs_list) > limit else logs_list
-    
-    def clear(self):
+
+    async def clear(self):
         """清空日志"""
-        with self.lock:
+        async with self.lock:
             self.logs.clear()
 
 
@@ -41,13 +49,12 @@ class CollectorHandler(logging.Handler):
     def __init__(self, collector):
         super().__init__()
         self.collector = collector
-    
+
     def emit(self, record):
         try:
             msg = self.format(record)
-            # 过滤掉aiohttp.access的日志，因为太多了
             if 'aiohttp.access' not in record.name:
-                self.collector.add_log(msg, record.levelname)
+                self.collector.add_log_sync(msg, record.levelname)
         except Exception:
             self.handleError(record)
 

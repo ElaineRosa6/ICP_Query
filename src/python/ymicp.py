@@ -135,7 +135,7 @@ class beian:
         self.blackappAndMiniByCondition = "https://hlwicpfwc.miit.gov.cn/icpproject_query/api/blackListDomain/queryByCondition_appAndMini"
         # APP/小程序/快应用详情查询接口
         self.queryDetailByAppAndMiniId = "https://hlwicpfwc.miit.gov.cn/icpproject_query/api/icpAbbreviateInfo/queryDetailByAppAndMiniId"
-        self.sign = "eyJ0eXBlIjozLCJleHREYXRhIjp7InZhZnljb2RlX2ltYWdlX2tleSI6IjUyZWI1ZTcyODViNzRmNWJhM2YwYzBkNTg0YTg3NmVmIn0sImUiOjE3NTY5NzAyNDg4MjN9.Ngpkwn4T7sQoQF9pCk_sQQpH61wQUEKnK2sQ8hDIq-Q"
+        self.sign = ""
         self.token = ""
         self.token_expire = 0
         self.timeout = aiohttp.ClientTimeout(total=getattr(getattr(config, 'system', object()), 'http_client_timeout', 30))
@@ -664,6 +664,8 @@ class beian:
                 )
             if not success:
                 return {"code": 500, "message": data}
+            if data is None:
+                return {"code": 500, "message": "工信部返回空数据"}
             if data.get("code") == 500 or not success:
                 return {"code": 122, "message": "工信部服务器异常"}
         except Exception as e:

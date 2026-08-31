@@ -160,7 +160,8 @@ class ProxyPool:
         """获取代理"""
         # 等待代理池有可用代理
         timeout = 30  # 30 秒超时
-        start_time = asyncio.get_event_loop().time()
+        loop = asyncio.get_running_loop()
+        start_time = loop.time()
 
         while True:
             current_time = datetime.now().timestamp()
@@ -175,11 +176,18 @@ class ProxyPool:
                     random_key = f"http://{random.choice(valid_proxies)}"
                     break
 
-            if asyncio.get_event_loop().time() - start_time > timeout:
+            if loop.time() - start_time > timeout:
                 raise TimeoutError("等待代理超时")
             await asyncio.sleep(0.1)
 
         return random_key
+
+    async def remove_proxy(self, address: str):
+        """在锁保护下移除失效代理。"""
+        async with self._pool_lock:
+            if address in pool_cache:
+                del pool_cache[address]
+                logger.info(f"安全移除代理：{address}")
 
 
 # IPv6 地址池相关函数已迁移到 ipv6_pool.py

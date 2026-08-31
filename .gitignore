@@ -30,3 +30,4 @@ model_data/
 打包/
 nuitka-crash-report.xml
 icpApi.exe
+.audit-results-incremental/

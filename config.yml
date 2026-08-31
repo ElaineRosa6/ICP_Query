@@ -2,7 +2,7 @@ system:
   host: 0.0.0.0
   port: 16181
   http_client_timeout: 30
-  web_ui: true
+  web_ui: false
   detail_concurrency: 5
 captcha:
   enable: true

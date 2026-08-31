@@ -9,6 +9,7 @@ import os
 import subprocess
 import locale
 import uuid
+import ipaddress
 from mlog import logger
 
 
@@ -45,15 +46,25 @@ def get_resource_path(relative_path):
 
 def is_public_ipv6(ipv6):
     """检查IPv6地址是否为公网IP"""
-    return not (ipv6.startswith("fe80") or ipv6.startswith("fc00") or ipv6.startswith("fd00"))
+    try:
+        address = ipaddress.ip_address(ipv6)
+    except ValueError:
+        return False
+    return isinstance(address, ipaddress.IPv6Address) and address.is_global
 
 
 def _run_cmd_capture(cmd):
     """执行系统命令并自动多编码尝试解码"""
     try:
-        p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        out, err = p.communicate(timeout=5)
-    except Exception:
+        completed = subprocess.run(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=5,
+            check=False,
+        )
+        out = completed.stdout
+    except (OSError, subprocess.TimeoutExpired):
         return ""
     if not out:
         return ""

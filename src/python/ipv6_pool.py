@@ -69,19 +69,15 @@ class IPv6AddressPool:
                 if not is_public_ipv6(addr):
                     logger.warning(f"IPv6地址不是公网地址（网段检测）: {addr}")
                     return False
-                self.active_addresses[addr] = time.time()
-                verified_count += 1
-                logger.info(f"✓ IPv6地址可用: {addr}")
-                return True
                 # 然后验证实际可达性
-                # if await self._verify_ipv6_address(addr):
-                #     self.active_addresses[addr] = time.time()
-                #     verified_count += 1
-                #     logger.info(f"✓ IPv6地址可用: {addr}")
-                #     return True
-                # else:
-                #     logger.warning(f"✗ IPv6地址不可用: {addr}")
-                #     return False
+                if await self._verify_ipv6_address(addr):
+                    self.active_addresses[addr] = time.time()
+                    verified_count += 1
+                    logger.info(f"✓ IPv6地址可用: {addr}")
+                    return True
+                else:
+                    logger.warning(f"✗ IPv6地址不可用: {addr}")
+                    return False
         
         # 并发验证所有地址
         tasks = [verify_and_add(addr) for addr in self.system_addresses]
@@ -156,47 +152,46 @@ class IPv6AddressPool:
             return False
     
     async def _add_addresses(self, count: int):
-        """添加指定数量的IPv6地址（不再校验新地址，只要本地存在且为公网地址就加入池）"""
+        """添加指定数量的IPv6地址，验证通过后加入活跃池"""
         if not self._last_prefix:
             logger.error("无法添加IPv6地址：未知前缀")
             return 0
 
         logger.info(f"尝试添加 {count} 个IPv6地址...")
         added = 0
-        max_attempts = count * 3  # 最多尝试次数（考虑到可能有失败的）
+        max_attempts = count * 3
         attempts = 0
 
         while added < count and attempts < max_attempts:
             attempts += 1
             try:
-                # 生成新地址
                 configure_ipv6_addresses(self._last_prefix, 1, self.network_card)
-                await asyncio.sleep(0.5)  # 等待系统应用配置
+                await asyncio.sleep(0.5)
 
-                # 重新获取系统地址
                 old_system_addresses = set(self.system_addresses)
                 await self._refresh_system_addresses()
 
-                # 找出新增的地址
                 new_addresses = set(self.system_addresses) - old_system_addresses - set(self.active_addresses.keys())
 
                 if new_addresses:
                     for new_addr in new_addresses:
-                        # 只要本地存在且为公网地址就直接加入池
-                        if is_public_ipv6(new_addr):
+                        if not is_public_ipv6(new_addr):
+                            logger.warning(f"新添加的IPv6地址不是公网地址: {new_addr}")
+                            continue
+                        # 验证新地址的公网可达性
+                        if await self._verify_ipv6_address(new_addr):
                             self.active_addresses[new_addr] = time.time()
                             logger.info(f"✓ 成功添加IPv6地址: {new_addr}")
                             added += 1
                             break
                         else:
-                            logger.warning(f"新添加的IPv6地址不是公网地址: {new_addr}")
+                            logger.warning(f"新添加的IPv6地址不可达: {new_addr}")
                 else:
                     logger.warning(f"添加IPv6地址可能失败，未检测到新地址（尝试 {attempts}/{max_attempts}）")
 
             except Exception as e:
                 logger.error(f"添加IPv6地址时出错: {e}")
 
-            # 如果还需要继续添加，短暂等待
             if added < count:
                 await asyncio.sleep(0.5)
 

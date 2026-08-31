@@ -19,7 +19,7 @@ async def get_realtime_logs(request):
     limit = int(request.query.get('limit', 500))
     
     try:
-        logs = log_collector.get_logs(limit)
+        logs = await log_collector.get_logs(limit)
         return wj({"code": 200, "data": logs, "total": len(logs)})
     except Exception as e:
         logger.error(f"获取实时日志失败: {e}")
@@ -31,7 +31,7 @@ async def get_realtime_logs(request):
 async def clear_logs(request):
     """清空实时日志"""
     try:
-        log_collector.clear()
+        await log_collector.clear()
         return wj({"code": 200, "message": "日志已清空"})
     except Exception as e:
         return wj({"code": 500, "message": f"清空日志失败: {str(e)}"})

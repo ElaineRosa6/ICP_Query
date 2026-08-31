@@ -110,4 +110,4 @@ async def options_middleware(request, handler):
         return wj({"code": ex.status, "msg": ex.reason}, headers=CORS_HEADERS)
     except Exception as e:
         logger.error(f"中间件处理请求时出错：{e}")
-        return wj({"code": 500, "msg": str(e)}, headers=CORS_HEADERS)
+        return wj({"code": 500, "msg": "服务器内部错误"}, headers=CORS_HEADERS)
